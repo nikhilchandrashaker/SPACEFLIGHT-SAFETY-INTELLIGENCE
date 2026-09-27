@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spaceflight Safety Intelligence — Report</title>
+<style>
+:root{
+  --bg:#faf9f6; --ink:#1c1f26; --sub:#5c6270; --line:#e3e1da; --accent:#b5451b;
+  --serif:Georgia,'Iowan Old Style','Palatino Linotype',serif;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#181a1f;--ink:#e9e7e1;--sub:#a2a7b3;--line:#31343c;}
+}
+:root[data-theme="dark"]{--bg:#181a1f;--ink:#e9e7e1;--sub:#a2a7b3;--line:#31343c;}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);}
+article{max-width:680px;margin:0 auto;padding:48px 24px 80px;}
+h1{font-family:var(--serif);font-size:2rem;line-height:1.2;margin:0 0 4px;}
+.byline{font-family:var(--sans);color:var(--sub);font-size:.85rem;margin-bottom:36px;}
+h2{font-size:1.25rem;margin:40px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px;}
+p{line-height:1.7;font-size:1.05rem;}
+.callout{background:transparent;border-left:3px solid var(--accent);padding:2px 0 2px 18px;margin:20px 0;color:var(--sub);font-family:var(--sans);font-size:.95rem;}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:.9rem;margin:16px 0;}
+td,th{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;}
+svg{width:100%;height:auto;margin:12px 0;}
+.cap{font-family:var(--sans);color:var(--sub);font-size:.8rem;}
+</style>
+</head>
+<body>
+<article>
+<h1>Historical Shuttle Risk &amp; Decision Analytics</h1>
+<p class="byline">Two independent case studies from small, historical NASA-adjacent datasets</p>
+
+<h2>Overview</h2>
+<p>This report examines two small, unrelated engineering datasets that both concern shuttle-era safety decisions: a 15-case autoland-versus-manual-control dataset from a 1988 NASA autolander design team, and the 23-flight O-ring dataset assembled after the 1986 Challenger disaster. Both are too small for production machine learning, but both reward careful statistical reasoning, and both illustrate a recurring theme in engineering risk analysis: the danger of extrapolating past the edge of what has actually been observed.</p>
+
+<h2>Case study 1: landing control</h2>
+<p>The landing-control dataset records 15 historical situations in which engineers judged whether automatic or manual control was preferable, based on six conditions: stability, error magnitude and sign, wind direction, magnitude class, and visibility. Nine of the 15 cases favored automatic control; six favored manual. The dataset was originally used with a rule-induction system to produce human-readable decision rules rather than a black-box classifier, and this report follows that same interpretable approach: matching a new situation against the most specific historical rule it satisfies, rather than fitting a dense statistical model to 15 points.</p>
+<p>The clearest pattern in the data is that automatic control is favored whenever visibility is poor, and manual control tends to be favored under otherwise unremarkable but stable conditions with clear visibility — consistent with the intuition that automation helps most exactly when a human pilot has the least direct information to work with.</p>
+
+<h2>Case study 2: O-ring thermal distress</h2>
+<p>The O-ring dataset records, for each of the 23 shuttle flights before Challenger, the launch temperature, a leak-check pressure reading, and how many of the six primary field-joint O-rings showed thermal distress. A simple least-squares regression of distress count on launch temperature gives a downward-sloping line: colder launches associate with more distress in the historical record, most visibly at the single 53°F flight, which had two O-rings distressed — more than any other flight.</p>
+<div id="chart"></div>
+<p class="cap">Fig. 1 — O-ring thermal distress vs. launch temperature, 23 pre-Challenger flights, with least-squares fit. The 31°F point (red) lies far outside the observed 53–81°F range.</p>
+
+<h2>The extrapolation problem</h2>
+<p>The night before the Challenger launch, the forecast temperature was 31°F — 22 degrees colder than any flight in the historical record. Extending the regression line that far predicts noticeably more O-ring distress than anything actually observed, but that number should not be read as a validated forecast: it is a straight line drawn well past the edge of its data, and multiple later academic re-analyses (Dalal, Fowlkes &amp; Hoadley, 1989; Lavine, 1991; Draper, 1993) found that different, equally defensible extrapolation methods diverge sharply at 31°F. That divergence is itself the finding: it undercuts the pre-launch assumption that temperature had no bearing on failure risk, because if temperature genuinely didn't matter, reasonable extrapolations wouldn't disagree this much. Separately, the underlying physical reasoning — that O-ring material seals less reliably as it stiffens in the cold — was available as engineering judgment independent of any curve fit.</p>
+<div class="callout">Reading this dataset as "the model predicts X O-rings will fail at 31°F" overstates what a 23-point linear fit can responsibly claim about a temperature never observed. The historically important lesson is the opposite: a model can produce a confident-looking number even when the honest answer is that the data doesn't reach that far.</div>
+
+<h2>Limitations</h2>
+<p>Both datasets are small enough that any single unusual observation can shift a fitted model noticeably, and neither supports a claim of high predictive accuracy. The two datasets are also independent — different systems, different variables, different eras — and are presented here as parallel case studies rather than combined into one analysis. The interactive dashboard accompanying this report lets you explore both datasets directly, including the landing-control rule matcher and an adjustable-temperature O-ring estimator.</p>
+</article>
+<script>
+const oring=[[66,0],[70,1],[69,0],[68,0],[67,0],[72,0],[73,0],[70,0],[57,1],[63,1],[70,1],[78,0],[67,0],[53,2],[67,0],[75,0],[70,0],[81,0],[76,0],[79,0],[75,0],[76,0],[58,1]];
+function linreg(pts){const n=pts.length,sx=pts.reduce((s,p)=>s+p[0],0),sy=pts.reduce((s,p)=>s+p[1],0),sxy=pts.reduce((s,p)=>s+p[0]*p[1],0),sxx=pts.reduce((s,p)=>s+p[0]*p[0],0);const b=(n*sxy-sx*sy)/(n*sxx-sx*sx),a=(sy-b*sx)/n;return{a,b};}
+const reg=linreg(oring);
+const w=600,h=260,pad=36;
+const xs=t=>pad+(t-31)/(81-31)*(w-2*pad), ys=d=>h-pad-(d/3)*(h-2*pad);
+let pts=oring.map(o=>`<circle cx="${xs(o[0])}" cy="${ys(o[1])}" r="4" fill="#b5451b" opacity=".55"/>`).join('');
+const x1=31,x2=81,y1=reg.a+reg.b*x1,y2=reg.a+reg.b*x2;
+document.getElementById('chart').innerHTML = `<svg viewBox="0 0 ${w} ${h}">
+<line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="#999"/>
+<line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h-pad}" stroke="#999"/>
+<line x1="${xs(x1)}" y1="${ys(Math.max(0,y1))}" x2="${xs(x2)}" y2="${ys(Math.max(0,y2))}" stroke="#1c1f26" stroke-width="1.5"/>
+${pts}
+<circle cx="${xs(31)}" cy="${ys(Math.min(3,Math.max(0,reg.a+reg.b*31)))}" r="6" fill="#d1442e"/>
+<text x="${pad}" y="${h-8}" font-size="11" fill="#888">31°F</text>
+<text x="${w-pad-22}" y="${h-8}" font-size="11" fill="#888">81°F</text>
+</svg>`;
+</script>
+</body>
+</html>

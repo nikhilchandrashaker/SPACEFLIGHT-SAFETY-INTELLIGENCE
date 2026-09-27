@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spaceflight Safety Intelligence</title>
+<style>
+:root{
+  --bg:#0b1220; --panel:#121b2e; --panel2:#0f1729; --line:#26324a;
+  --ink:#e7edf7; --sub:#93a2bd; --amber:#f5a623; --cyan:#4fd1c5; --red:#e0554f;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f7;--line:#dbe1ee;--ink:#111a2b;--sub:#5a6785;}
+}
+:root[data-theme="light"]{--bg:#f3f5f9;--panel:#fff;--panel2:#eef1f7;--line:#dbe1ee;--ink:#111a2b;--sub:#5a6785;}
+html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+*{box-sizing:border-box;}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--sans);}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:16px 20px 0;}
+h1{font-size:1.15rem;margin:0 0 2px;letter-spacing:.2px;}
+.sub{color:var(--sub);font-size:.8rem;margin:0 0 12px;}
+nav{display:flex;gap:2px;overflow-x:auto;}
+nav button{background:none;border:none;color:var(--sub);font:inherit;font-size:.85rem;padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+nav button.on{color:var(--ink);border-color:var(--amber);}
+main{max-width:920px;margin:0 auto;padding:20px;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-bottom:16px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+.stat{background:var(--panel2);border-radius:8px;padding:12px 14px;}
+.stat b{display:block;font-family:var(--mono);font-size:1.4rem;}
+.stat span{color:var(--sub);font-size:.75rem;}
+label{display:block;font-size:.8rem;color:var(--sub);margin:10px 0 4px;}
+select,input[type=range]{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit;}
+button.act{margin-top:14px;background:var(--amber);color:#1a1305;border:none;border-radius:6px;padding:10px 18px;font-weight:600;cursor:pointer;}
+.result{margin-top:14px;padding:14px;border-radius:8px;border:1px solid var(--line);}
+.result.auto{border-color:var(--cyan);}
+.result.manual{border-color:var(--amber);}
+.result h3{margin:0 0 6px;}
+.readout{font-family:var(--mono);font-size:2rem;}
+.warn{color:var(--red);font-size:.85rem;margin-top:8px;}
+svg{width:100%;height:auto;overflow:visible;}
+.rule{font-family:var(--mono);font-size:.78rem;color:var(--sub);margin-top:8px;}
+p{line-height:1.55;color:var(--ink);}
+p.small{color:var(--sub);font-size:.85rem;}
+.hidden{display:none;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Spaceflight Safety Intelligence</h1>
+  <p class="sub">Historical Shuttle risk &amp; decision analytics — Landing Control (1988) and Challenger O-ring datasets (1993)</p>
+  <nav id="nav"></nav>
+</header>
+<main id="main"></main>
+
+<script>
+// ---------- Landing control rules (Class 1=noauto/manual, 2=auto) ----------
+// [stability, error, sign, wind, magnitude, visibility] null = wildcard
+const rules = [
+  {c:[null,null,null,null,null,2], cls:2},
+  {c:[2,null,null,null,null,1], cls:1},
+  {c:[1,2,null,null,null,1], cls:1},
+  {c:[1,1,null,null,null,1], cls:1},
+  {c:[1,3,2,2,null,1], cls:1},
+  {c:[null,null,null,null,4,1], cls:1},
+  {c:[1,4,null,null,1,1], cls:2},
+  {c:[1,4,null,null,2,1], cls:2},
+  {c:[1,4,null,null,3,1], cls:2},
+  {c:[1,3,1,1,1,1], cls:2},
+  {c:[1,3,1,1,2,1], cls:2},
+  {c:[1,3,1,2,1,1], cls:2},
+  {c:[1,3,1,2,2,1], cls:2},
+  {c:[1,3,1,1,3,1], cls:1},
+  {c:[1,3,1,2,3,1], cls:2},
+];
+const labels = {
+  stability:['','stable','extremely stable'],
+  error:['','extra large','large','medium','small'],
+  sign:['','positive','negative'],
+  wind:['','headwind','tailwind'],
+  magnitude:['','low','medium','strong','out of range'],
+  visibility:['','yes','no']
+};
+
+// ---------- O-ring data (temp°F, distress count of 6) ----------
+const oring = [
+ [66,0],[70,1],[69,0],[68,0],[67,0],[72,0],[73,0],[70,0],[57,1],[63,1],
+ [70,1],[78,0],[67,0],[53,2],[67,0],[75,0],[70,0],[81,0],[76,0],[79,0],
+ [75,0],[76,0],[58,1]
+];
+function linreg(pts){
+  const n=pts.length, sx=pts.reduce((s,p)=>s+p[0],0), sy=pts.reduce((s,p)=>s+p[1],0);
+  const sxy=pts.reduce((s,p)=>s+p[0]*p[1],0), sxx=pts.reduce((s,p)=>s+p[0]*p[0],0);
+  const b=(n*sxy-sx*sy)/(n*sxx-sx*sx), a=(sy-b*sx)/n;
+  return {a,b};
+}
+const reg = linreg(oring);
+
+// ---------- Pages ----------
+const pages = ['Overview','Landing Control','O-Ring Risk','Challenger Scenario'];
+let current = 0;
+const nav = document.getElementById('nav');
+pages.forEach((p,i)=>{
+  const b=document.createElement('button');
+  b.textContent=p; b.onclick=()=>{current=i; render();};
+  nav.appendChild(b);
+});
+
+function render(){
+  [...nav.children].forEach((b,i)=>b.className = i===current ? 'on':'');
+  const main = document.getElementById('main');
+  if(current===0) main.innerHTML = pageOverview();
+  if(current===1){ main.innerHTML = pageLanding(); wireLanding(); }
+  if(current===2){ main.innerHTML = pageOring(); wireOring(); }
+  if(current===3) main.innerHTML = pageChallenger();
+}
+
+function pageOverview(){
+  const dist = [0,0,0].map((_,i)=>oring.filter(o=>o[1]===i).length);
+  const dist3plus = oring.filter(o=>o[1]>=3).length;
+  return `<div class="card"><div class="grid">
+    <div class="stat"><b>15</b><span>Landing-control cases</span></div>
+    <div class="stat"><b>23</b><span>Shuttle launches (pre-Challenger)</span></div>
+    <div class="stat"><b>53–81°F</b><span>Observed launch temperature range</span></div>
+    <div class="stat"><b>31°F</b><span>Challenger forecast launch temp</span></div>
+  </div></div>
+  <div class="card">
+    <h3 style="margin-top:0">O-ring thermal distress, by count</h3>
+    <div class="grid">
+      <div class="stat"><b>${dist[0]}</b><span>flights, 0 O-rings distressed</span></div>
+      <div class="stat"><b>${dist[1]}</b><span>flights, 1 O-ring distressed</span></div>
+      <div class="stat"><b>${dist3plus}</b><span>flight, 2+ O-rings distressed</span></div>
+    </div>
+    <p class="small">The one flight with 2 O-rings distressed (of 23) launched at 53°F — the coldest temperature in the historical record, and still 22°F warmer than the 31°F Challenger forecast.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">What this dashboard does</h3>
+    <p>Two independent case studies built from small, historical NASA/UCI datasets: an interpretable rule-based tool for the shuttle autoland-vs-manual decision, and a statistical explorer for O-ring thermal distress vs. launch temperature — including the extrapolation problem central to the Challenger decision.</p>
+  </div>`;
+}
+
+function pageLanding(){
+  const opt=(arr)=>arr.slice(1).map((l,i)=>`<option value="${i+1}">${l}</option>`).join('');
+  return `<div class="card">
+    <p>Enter the observed conditions. The tool matches them against 15 historical rules (Burke autolander team, 1988) and returns the most specific matching rule.</p>
+    <label>Stability</label><select id="f_stability"><option value="">— any —</option>${opt(labels.stability)}</select>
+    <label>Error</label><select id="f_error"><option value="">— any —</option>${opt(labels.error)}</select>
+    <label>Sign</label><select id="f_sign"><option value="">— any —</option>${opt(labels.sign)}</select>
+    <label>Wind</label><select id="f_wind"><option value="">— any —</option>${opt(labels.wind)}</select>
+    <label>Magnitude</label><select id="f_magnitude"><option value="">— any —</option>${opt(labels.magnitude)}</select>
+    <label>Visibility</label><select id="f_visibility"><option value="">— any —</option>${opt(labels.visibility)}</select>
+    <button class="act" id="run">Get recommendation</button>
+    <div id="out"></div>
+  </div>`;
+}
+function wireLanding(){
+  document.getElementById('run').onclick=()=>{
+    const keys=['stability','error','sign','wind','magnitude','visibility'];
+    const input = keys.map(k=>{const v=document.getElementById('f_'+k).value; return v?parseInt(v):null;});
+    let best=null, bestScore=-1;
+    rules.forEach(r=>{
+      let ok=true, spec=0;
+      r.c.forEach((v,i)=>{ if(v!==null){ spec++; if(input[i]!==v) ok=false; } });
+      if(ok && spec>bestScore){bestScore=spec; best=r;}
+    });
+    const out = document.getElementById('out');
+    if(!best){ out.innerHTML = `<div class="result"><p class="warn">No historical rule matches this exact combination closely enough to give a confident recommendation.</p></div>`; return; }
+    const isAuto = best.cls===2;
+    const cond = keys.map((k,i)=> best.c[i]!==null ? `${k}=${labels[k][best.c[i]]}` : null).filter(Boolean).join(', ');
+    out.innerHTML = `<div class="result ${isAuto?'auto':'manual'}">
+      <h3>Recommended control</h3>
+      <div class="readout">${isAuto?'AUTOMATIC':'MANUAL'}</div>
+      <div class="rule">Matched rule (${bestScore} condition${bestScore===1?'':'s'} specified): ${cond||'no constraints (default)'}</div>
+    </div>`;
+  };
+}
+
+function pageOring(){
+  return `<div class="card">
+    <label>Launch temperature: <span id="tval">70</span>°F</label>
+    <input type="range" id="temp" min="31" max="81" value="70">
+    <div class="result" id="oout"></div>
+    <div id="chart"></div>
+    <p class="small">Regression fit on the 23 pre-Challenger flights: distress ≈ ${reg.a.toFixed(2)} + ${reg.b.toFixed(3)} × temperature. Below 53°F is outside the observed range — treat any estimate there as extrapolation, not measurement.</p>
+  </div>`;
+}
+function wireOring(){
+  const slider=document.getElementById('temp');
+  function upd(){
+    const t=parseInt(slider.value);
+    document.getElementById('tval').textContent=t;
+    const pred = Math.max(0, reg.a+reg.b*t);
+    const extrap = t<53;
+    document.getElementById('oout').innerHTML = `<h3>Estimated O-rings with thermal distress</h3>
+      <div class="readout">${pred.toFixed(1)} <span style="font-size:1rem;color:var(--sub)">of 6</span></div>
+      ${extrap?'<div class="warn">Extrapolated — no observed flight launched this cold. The regression line is a linear guess, not a validated model, at this temperature.</div>':''}`;
+    document.getElementById('chart').innerHTML = chartSVG(t,pred);
+  }
+  slider.oninput=upd; upd();
+}
+function chartSVG(hlT,hlY){
+  const w=680,h=280,pad=36;
+  const xs=t=>pad+(t-31)/(81-31)*(w-2*pad);
+  const ys=d=>h-pad-(d/3)*(h-2*pad);
+  let pts = oring.map(o=>`<circle cx="${xs(o[0])}" cy="${ys(o[1])}" r="4" fill="var(--cyan)" opacity=".85"/>`).join('');
+  const x1=31,x2=81, y1=reg.a+reg.b*x1, y2=reg.a+reg.b*x2;
+  return `<svg viewBox="0 0 ${w} ${h}">
+    <line x1="${pad}" y1="${h-pad}" x2="${w-pad}" y2="${h-pad}" stroke="var(--line)"/>
+    <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${h-pad}" stroke="var(--line)"/>
+    <line x1="${xs(x1)}" y1="${ys(Math.max(0,y1))}" x2="${xs(x2)}" y2="${ys(Math.max(0,y2))}" stroke="var(--amber)" stroke-width="2"/>
+    ${pts}
+    <circle cx="${xs(hlT)}" cy="${ys(Math.min(3,hlY))}" r="6" fill="var(--red)"/>
+    <text x="${pad}" y="${h-10}" font-size="11" fill="var(--sub)">31°F</text>
+    <text x="${w-pad-24}" y="${h-10}" font-size="11" fill="var(--sub)">81°F</text>
+    <text x="6" y="${pad}" font-size="11" fill="var(--sub)">3</text>
+    <text x="6" y="${h-pad}" font-size="11" fill="var(--sub)">0</text>
+  </svg>`;
+}
+
+function pageChallenger(){
+  const pred = reg.a+reg.b*31;
+  return `<div class="card">
+    <p class="sub" style="text-transform:none">Historical scenario analysis</p>
+    <h3 style="margin-top:0">The night before the Challenger launch</h3>
+    <p>Engineers reviewing the field-joint data knew launch temperature was forecast at 31°F. Every one of the 23 prior flights had launched at 53°F or warmer, so no flight data existed anywhere near that forecast. The regression above puts the extrapolated estimate at about ${pred.toFixed(1)} of 6 O-rings distressed at 31°F — well above anything actually observed, but the honest caveat is that this number comes from extending a line drawn through data that stops 22 degrees higher.</p>
+    <p>Multiple later re-analyses (Dalal, Fowlkes &amp; Hoadley 1989; Lavine 1991; Draper 1993) reached the same underlying conclusion: different reasonable extrapolation methods diverge sharply at 31°F, which itself undercuts any assumption that temperature had no effect on failure risk. The physical reasoning — that O-ring material stiffens and seals less effectively as it gets colder — was already available on the ground that night, independent of any curve fit.</p>
+    <p class="small">This dashboard presents that 31°F figure as an illustration of the extrapolation problem, not as a validated prediction — the point the historical record makes is that a number can be produced even when the honest answer is "we don't have data here."</p>
+  </div>`;
+}
+render();
+</script>
+</body>
+</html>
